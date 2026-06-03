@@ -11,33 +11,40 @@ source "$(dirname "$0")/lib/font_utils.sh"
 
 : "$BUILD_DIR"
 : "$CACHE_DIR"
+: "$DEPS_DIR"
+: "$DEPS_IDX"
 
 echo "-----> Supplying Crystal Reports fonts (index: $DEPS_IDX) <-----"
 
 FONT_SOURCE_DIR="$(buildpack_dir_from_script "$0")/fonts"
-SUPPLY_DIR="$DEPS_DIR/$DEPS_IDX"
-FONT_STAGING_DIR="$SUPPLY_DIR/fonts"
-PROFILED_DIR="$SUPPLY_DIR/profile.d"
+FONT_STAGING_DIR="$BUILD_DIR/.crystal-font-buildpack/fonts"
+PROFILED_DIR="$BUILD_DIR/.profile.d"
 PROFILE_SCRIPT="$PROFILED_DIR/000_crystal_font_buildpack.sh"
 
-# Stage fonts in the deps dir; the profile.d script copies them into the JRE at container startup
 INSTALLED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$FONT_STAGING_DIR")
 mkdir -p "$PROFILED_DIR"
 
 cat > "$PROFILE_SCRIPT" <<EOF
 #!/usr/bin/env bash
-# Installed by crystal-font-buildpack: copy staged fonts into the Java JRE lib/fonts directory
-STAGED_FONTS="\${DEPS_DIR:-/home/vcap/deps}/${DEPS_IDX}/fonts"
-JRE_FONTS_DIR="\${HOME}/.java-buildpack/open_jdk_jre/lib/fonts"
-if [[ -d "\${JRE_FONTS_DIR}" ]] && [[ -d "\${STAGED_FONTS}" ]]; then
+# Installed by crystal-font-buildpack: copy staged fonts into the Java JRE lib/fonts directory.
+STAGED_FONTS="\${HOME}/.crystal-font-buildpack/fonts"
+JRE_ROOT="\${HOME}/.java-buildpack"
+JRE_FONTS_DIR=""
+
+if [[ -d "\${JRE_ROOT}" ]]; then
+  JRE_FONTS_DIR=\$(find "\${JRE_ROOT}" -type d -path '*/lib/fonts' | head -n 1)
+fi
+
+if [[ -n "\${JRE_FONTS_DIR}" ]] && [[ -d "\${STAGED_FONTS}" ]]; then
+  mkdir -p "\${JRE_FONTS_DIR}"
   cp "\${STAGED_FONTS}"/* "\${JRE_FONTS_DIR}/" 2>/dev/null || true
   echo "crystal-font-buildpack: Installed fonts into \${JRE_FONTS_DIR}"
 else
-  echo "crystal-font-buildpack: WARNING - JRE fonts dir not found at \${JRE_FONTS_DIR}, skipping"
+  echo "crystal-font-buildpack: WARNING - unable to find Java buildpack lib/fonts or staged fonts at \${STAGED_FONTS}"
 fi
 EOF
 
 chmod +x "$PROFILE_SCRIPT"
 
-echo "Staged $INSTALLED_COUNT fonts (will be copied into JRE lib/fonts at container startup)"
+echo "Staged $INSTALLED_COUNT fonts in $FONT_STAGING_DIR and installed startup hook at $PROFILE_SCRIPT"
 exit 0
