@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Define staging paths
+BUILD_DIR=$1
+CACHE_DIR=$2
+DEPS_DIR=$3
+
+echo "-----> Running Crystal Reports Font Injector <-----"
+
+# 1. Look for the JRE directory installed by the CF Java Buildpack
+# Cloud Foundry stores buildpack dependencies inside the DEPS_DIR
+JRE_DIR=$(find $DEPS_DIR -type d -name "jre" -o -name "jdk" | head -n 1)
+
+if [ -z "$JRE_DIR" ]; then
+    echo "WARNING: JRE directory not found yet. Ensuring target directories exist for later stages..."
+    # Fallback: Create standard path relative to app execution environment if JRE loads later
+    JRE_FONTS_DIR="$BUILD_DIR/.java-buildpack/open_jdk_jre/lib/fonts"
+else
+    # Detect if it's Java 8 style (lib/fonts) or Java 9+ (legal/modules style changes)
+    if [ -d "$JRE_DIR/lib" ]; then
+        JRE_FONTS_DIR="$JRE_DIR/lib/fonts"
+    else
+        JRE_FONTS_DIR="$JRE_DIR/fonts"
+    fi
+fi
+
+echo "Target JRE fonts directory: $JRE_FONTS_DIR"
+
+# 2. Force create the target directory inside the JRE
+mkdir -p "$JRE_FONTS_DIR"
+
+# 3. Copy the fonts from your buildpack folder directly into the JRE
+BUILDPACK_DIR=$(dirname "$0")/..
+cp $BUILDPACK_DIR/fonts/*.ttf "$JRE_FONTS_DIR/"
+
+echo "Successfully injected $(ls $BUILDPACK_DIR/fonts/ | wc -l) fonts into JRE."
+exit 0
