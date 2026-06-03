@@ -1,41 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 BUILD_DIR="$1"
 CACHE_DIR="$2"
 DEPS_DIR="$3"
 DEPS_IDX="$4"
-
 # shellcheck source=./lib/font_utils.sh
 source "$(dirname "$0")/lib/font_utils.sh"
-
 # BUILD_DIR/CACHE_DIR are intentionally unused in supply mode.
 : "$BUILD_DIR"
 : "$CACHE_DIR"
-
 echo "-----> Supplying Crystal Reports fonts (index: $DEPS_IDX) <-----"
-
 FONT_SOURCE_DIR="$(buildpack_dir_from_script "$0")/fonts"
 SUPPLY_DIR="$DEPS_DIR/$DEPS_IDX"
 FONT_TARGET_DIR="$SUPPLY_DIR/fonts"
 PROFILED_DIR="$SUPPLY_DIR/profile.d"
 PROFILE_SCRIPT="$PROFILED_DIR/000_crystal_font_buildpack.sh"
-
 INSTALLED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$FONT_TARGET_DIR")
 mkdir -p "$PROFILED_DIR"
-
 cat > "$PROFILE_SCRIPT" <<EOF
 #!/usr/bin/env bash
-FONT_PATH="4{DEPS_DIR:-/home/vcap/deps}/$DEPS_IDX/fonts"
-if [[ -n "4{JAVA_TOOL_OPTIONS:-}" ]]; then
-  export JAVA_TOOL_OPTIONS="4JAVA_TOOL_OPTIONS -Dsun.java2d.fontpath=4FONT_PATH"
+FONT_PATH="\${DEPS_DIR:-/home/vcap/deps}/$DEPS_IDX/fonts"
+if [[ -n "\${JAVA_TOOL_OPTIONS:-}" ]]; then
+  export JAVA_TOOL_OPTIONS="\$JAVA_TOOL_OPTIONS -Dsun.java2d.fontpath=\$FONT_PATH"
 else
-  export JAVA_TOOL_OPTIONS="-Dsun.java2d.fontpath=4FONT_PATH"
+  export JAVA_TOOL_OPTIONS="-Dsun.java2d.fontpath=\$FONT_PATH"
 fi
 EOF
-
 chmod +x "$PROFILE_SCRIPT"
-
 echo "Supplied $INSTALLED_COUNT fonts to $FONT_TARGET_DIR"
 exit 0
-

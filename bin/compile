@@ -15,7 +15,12 @@ source "$(dirname "$0")/lib/font_utils.sh"
 echo "-----> Running Crystal Reports Font Injector <-----"
 
 # Look for a Java runtime installed by an earlier buildpack.
-JRE_DIR=$(find "$DEPS_DIR" -type d \( -name "jre" -o -name "jdk" \) | head -n 1 || true)
+# Detect via bin/java to handle names like open_jdk_jre, jre, or vendor-specific runtimes.
+JAVA_BIN=$(find "$DEPS_DIR" -type f -path "*/bin/java" | head -n 1 || true)
+JRE_DIR=""
+if [ -n "$JAVA_BIN" ]; then
+    JRE_DIR=$(cd "$(dirname "$JAVA_BIN")/.." && pwd)
+fi
 
 if [ -z "$JRE_DIR" ]; then
     echo "WARNING: JRE directory not found yet. Falling back to app-local Java path..."
