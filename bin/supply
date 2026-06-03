@@ -18,10 +18,12 @@ echo "-----> Supplying Crystal Reports fonts (index: $DEPS_IDX) <-----"
 
 FONT_SOURCE_DIR="$(buildpack_dir_from_script "$0")/fonts"
 FONT_STAGING_DIR="$BUILD_DIR/.crystal-font-buildpack/fonts"
+JRE_PRESEED_DIR="$BUILD_DIR/.java-buildpack/open_jdk_jre/lib/fonts"
 PROFILED_DIR="$BUILD_DIR/.profile.d"
 PROFILE_SCRIPT="$PROFILED_DIR/000_crystal_font_buildpack.sh"
 
 INSTALLED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$FONT_STAGING_DIR")
+PRESEEDED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$JRE_PRESEED_DIR")
 mkdir -p "$PROFILED_DIR"
 
 cat > "$PROFILE_SCRIPT" <<EOF
@@ -36,11 +38,13 @@ if [[ -n "\${JRE_FONTS_DIR}" ]] && [[ -d "\${STAGED_FONTS}" ]]; then
   cp "\${STAGED_FONTS}"/* "\${JRE_FONTS_DIR}/" 2>/dev/null || true
   echo "crystal-font-buildpack: Installed fonts into \${JRE_FONTS_DIR}"
 else
-  echo "crystal-font-buildpack: WARNING - unable to find Java buildpack lib/fonts or staged fonts at \${STAGED_FONTS}"
+  echo "crystal-font-buildpack: WARNING - runtime fallback could not find Java buildpack lib/fonts or staged fonts at \${STAGED_FONTS}"
 fi
 EOF
 
 chmod +x "$PROFILE_SCRIPT"
 
-echo "Staged $INSTALLED_COUNT fonts in $FONT_STAGING_DIR and installed startup hook at $PROFILE_SCRIPT"
+echo "Staged $INSTALLED_COUNT fonts in $FONT_STAGING_DIR"
+echo "Pre-seeded $PRESEEDED_COUNT fonts in $JRE_PRESEED_DIR"
+echo "Installed startup hook at $PROFILE_SCRIPT"
 exit 0

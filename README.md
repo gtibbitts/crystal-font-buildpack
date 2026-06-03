@@ -17,14 +17,16 @@ This buildpack is designed to run **before** the Java buildpack in your buildpac
 
 - Runs during the **supply** phase when using the buildpack API v3+
 - Stages fonts in `$BUILD_DIR/.crystal-font-buildpack/fonts` during the build
-- Generates `$BUILD_DIR/.profile.d/000_crystal_font_buildpack.sh` which **at container startup** copies fonts into `$HOME/.java-buildpack/open_jdk_jre/lib/fonts`
+- Pre-seeds fonts into `$BUILD_DIR/.java-buildpack/open_jdk_jre/lib/fonts` during staging
+- Generates `$BUILD_DIR/.profile.d/000_crystal_font_buildpack.sh` as a runtime fallback that copies fonts into the detected Java `lib/fonts` directory
 - This ensures fonts are present in the JRE lib/fonts directory, exactly where Crystal Reports expects them
-- `java_buildpack` installs its JRE during the build; the app-local `.profile.d` script runs **after** that, so the target directory exists
+- If app-local `.profile.d` is not sourced in your environment, the pre-seeded path still gives Java buildpack the expected font directory in the droplet
 
 **Lifecycle:**
 1. `crystal-font-buildpack` supply → stages fonts to `/home/vcap/app/.crystal-font-buildpack/fonts`
-2. `java_buildpack` compile → installs JRE to `/home/vcap/app/.java-buildpack/open_jdk_jre`
-3. Container startup → `/home/vcap/app/.profile.d/000_crystal_font_buildpack.sh` copies fonts into `/home/vcap/app/.java-buildpack/open_jdk_jre/lib/fonts`
+2. `crystal-font-buildpack` supply → pre-seeds `/home/vcap/app/.java-buildpack/open_jdk_jre/lib/fonts`
+3. `java_buildpack` compile → installs or reuses JRE under `/home/vcap/app/.java-buildpack`
+4. Container startup → `/home/vcap/app/.profile.d/000_crystal_font_buildpack.sh` re-copies fonts if needed
 
 ### Compile mode (Legacy, for single buildpack deployments)
 
@@ -56,6 +58,9 @@ mkdir -p "$HOME/.java-buildpack/open_jdk_jre/lib/fonts" "$build_dir" "$cache_dir
 # Run supply (stages fonts)
 ./bin/supply "$build_dir" "$cache_dir" "$tmp_root/deps" 0
 
+# Verify fonts were pre-seeded during staging
+ls -1 "$build_dir/.java-buildpack/open_jdk_jre/lib/fonts" | head -3
+
 # Simulate container startup
 cp -R "$build_dir/." "$HOME/"
 source "$HOME/.profile.d/000_crystal_font_buildpack.sh"
@@ -81,10 +86,10 @@ ls -1 "$deps_dir/2/open_jdk_jre/lib/fonts" | head -3
 
 ## Runtime behavior
 
-When supply mode is active, the generated `profile.d` script runs at container startup and:
-1. Finds staged fonts at `$HOME/.crystal-font-buildpack/fonts`
-2. Locates the Java buildpack `lib/fonts` directory under `$HOME/.java-buildpack`
-3. Copies all staged fonts into that JRE lib/fonts directory
+When supply mode is active, the buildpack:
+1. Stages fonts at `$HOME/.crystal-font-buildpack/fonts`
+2. Pre-seeds `$HOME/.java-buildpack/open_jdk_jre/lib/fonts` during staging
+3. Also installs a `.profile.d` fallback that locates the active Java buildpack `lib/fonts` directory and copies fonts again if needed
 
 Example generated script (with DEPS_IDX=0):
 ```bash
@@ -99,7 +104,7 @@ if [[ -n "${JRE_FONTS_DIR}" ]] && [[ -d "${STAGED_FONTS}" ]]; then
   cp "${STAGED_FONTS}"/* "${JRE_FONTS_DIR}/" 2>/dev/null || true
   echo "crystal-font-buildpack: Installed fonts into ${JRE_FONTS_DIR}"
 else
-  echo "crystal-font-buildpack: WARNING - unable to find Java buildpack lib/fonts or staged fonts"
+  echo "crystal-font-buildpack: WARNING - runtime fallback could not find Java buildpack lib/fonts or staged fonts"
 fi
 ```
 
