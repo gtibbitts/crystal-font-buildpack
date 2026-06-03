@@ -27,13 +27,9 @@ mkdir -p "$PROFILED_DIR"
 cat > "$PROFILE_SCRIPT" <<EOF
 #!/usr/bin/env bash
 # Installed by crystal-font-buildpack: copy staged fonts into the Java JRE lib/fonts directory.
-STAGED_FONTS="\${HOME}/.crystal-font-buildpack/fonts"
-JRE_ROOT="\${HOME}/.java-buildpack"
-JRE_FONTS_DIR=""
-
-if [[ -d "\${JRE_ROOT}" ]]; then
-  JRE_FONTS_DIR=\$(find "\${JRE_ROOT}" -type d -path '*/lib/fonts' | head -n 1)
-fi
+STAGED_FONTS="\${HOME}/app/.crystal-font-buildpack/fonts"
+JRE_ROOT="\${HOME}/app/.java-buildpack"
+JRE_FONTS_DIR="\${JRE_ROOT}/open_jdk_jre/lib/fonts"
 
 if [[ -n "\${JRE_FONTS_DIR}" ]] && [[ -d "\${STAGED_FONTS}" ]]; then
   mkdir -p "\${JRE_FONTS_DIR}"
