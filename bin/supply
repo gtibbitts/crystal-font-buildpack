@@ -1,31 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 BUILD_DIR="$1"
 CACHE_DIR="$2"
 DEPS_DIR="$3"
 DEPS_IDX="$4"
+
 # shellcheck source=./lib/font_utils.sh
 source "$(dirname "$0")/lib/font_utils.sh"
-# BUILD_DIR/CACHE_DIR are intentionally unused in supply mode.
+
 : "$BUILD_DIR"
 : "$CACHE_DIR"
+
 echo "-----> Supplying Crystal Reports fonts (index: $DEPS_IDX) <-----"
+
 FONT_SOURCE_DIR="$(buildpack_dir_from_script "$0")/fonts"
 SUPPLY_DIR="$DEPS_DIR/$DEPS_IDX"
-FONT_TARGET_DIR="$SUPPLY_DIR/fonts"
+FONT_STAGING_DIR="$SUPPLY_DIR/fonts"
 PROFILED_DIR="$SUPPLY_DIR/profile.d"
 PROFILE_SCRIPT="$PROFILED_DIR/000_crystal_font_buildpack.sh"
-INSTALLED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$FONT_TARGET_DIR")
+
+# Stage fonts in the deps dir; the profile.d script copies them into the JRE at container startup
+INSTALLED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$FONT_STAGING_DIR")
 mkdir -p "$PROFILED_DIR"
+
 cat > "$PROFILE_SCRIPT" <<EOF
 #!/usr/bin/env bash
-FONT_PATH="\${DEPS_DIR:-/home/vcap/deps}/$DEPS_IDX/fonts"
-if [[ -n "\${JAVA_TOOL_OPTIONS:-}" ]]; then
-  export JAVA_TOOL_OPTIONS="\$JAVA_TOOL_OPTIONS -Dsun.java2d.fontpath=\$FONT_PATH"
+# Installed by crystal-font-buildpack: copy staged fonts into the Java JRE lib/fonts directory
+STAGED_FONTS="\${DEPS_DIR:-/home/vcap/deps}/${DEPS_IDX}/fonts"
+JRE_FONTS_DIR="\${HOME}/.java-buildpack/open_jdk_jre/lib/fonts"
+if [[ -d "\${JRE_FONTS_DIR}" ]] && [[ -d "\${STAGED_FONTS}" ]]; then
+  cp "\${STAGED_FONTS}"/* "\${JRE_FONTS_DIR}/" 2>/dev/null || true
+  echo "crystal-font-buildpack: Installed fonts into \${JRE_FONTS_DIR}"
 else
-  export JAVA_TOOL_OPTIONS="-Dsun.java2d.fontpath=\$FONT_PATH"
+  echo "crystal-font-buildpack: WARNING - JRE fonts dir not found at \${JRE_FONTS_DIR}, skipping"
 fi
 EOF
+
 chmod +x "$PROFILE_SCRIPT"
-echo "Supplied $INSTALLED_COUNT fonts to $FONT_TARGET_DIR"
+
+echo "Staged $INSTALLED_COUNT fonts (will be copied into JRE lib/fonts at container startup)"
 exit 0

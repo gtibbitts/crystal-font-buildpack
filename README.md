@@ -15,11 +15,16 @@ This buildpack is designed to run **before** the Java buildpack in your buildpac
 
 ### Supply mode (Recommended for modern CF)
 
-- Runs during the **supply** phase when using the buildpack API v3+ 
-- Copies fonts into `deps/$DEPS_IDX/fonts`
-- Generates `profile.d/000_crystal_font_buildpack.sh` that appends `-Dsun.java2d.fontpath` to `JAVA_TOOL_OPTIONS`
-- Works seamlessly with java_buildpack running in any order
-- Set `JAVA_TOOL_OPTIONS` will be available to the Java process at runtime
+- Runs during the **supply** phase when using the buildpack API v3+
+- Stages fonts in `deps/$DEPS_IDX/fonts` during the build
+- Generates `profile.d/000_crystal_font_buildpack.sh` which **at container startup** copies fonts into `$HOME/.java-buildpack/open_jdk_jre/lib/fonts`
+- This ensures fonts are present in the JRE lib/fonts directory, exactly where Crystal Reports expects them
+- `java_buildpack` installs its JRE during the build; the profile.d script runs **after** that, so the target directory exists
+
+**Lifecycle:**
+1. `crystal-font-buildpack` supply → stages fonts to `/home/vcap/deps/0/fonts`
+2. `java_buildpack` compile → installs JRE to `/home/vcap/app/.java-buildpack/open_jdk_jre`
+3. Container startup → profile.d copies fonts into `/home/vcap/app/.java-buildpack/open_jdk_jre/lib/fonts`
 
 ### Compile mode (Legacy, for single buildpack deployments)
 
@@ -41,16 +46,22 @@ This buildpack is designed to run **before** the Java buildpack in your buildpac
 **Test supply mode:**
 ```bash
 tmp_root=$(mktemp -d)
+export HOME="$tmp_root/home"
+export DEPS_DIR="$tmp_root/deps"
 build_dir="$tmp_root/build"
 cache_dir="$tmp_root/cache"
-deps_dir="$tmp_root/deps"
-mkdir -p "$build_dir" "$cache_dir"
 
-./bin/supply "$build_dir" "$cache_dir" "$deps_dir" 0
+# Simulate java_buildpack having installed the JRE
+mkdir -p "$HOME/.java-buildpack/open_jdk_jre/lib/fonts" "$build_dir" "$cache_dir"
 
-# Verify fonts and profile script
-ls -1 "$deps_dir/0/fonts" | head -3
-cat "$deps_dir/0/profile.d/000_crystal_font_buildpack.sh"
+# Run supply (stages fonts)
+./bin/supply "$build_dir" "$cache_dir" "$DEPS_DIR" 0
+
+# Simulate container startup
+source "$DEPS_DIR/0/profile.d/000_crystal_font_buildpack.sh"
+
+# Verify fonts are now in the JRE lib/fonts directory
+ls -1 "$HOME/.java-buildpack/open_jdk_jre/lib/fonts"
 ```
 
 **Test compile mode (when java buildpack has already run):**
@@ -70,19 +81,21 @@ ls -1 "$deps_dir/2/open_jdk_jre/lib/fonts" | head -3
 
 ## Runtime behavior
 
-When supply mode is active, the generated `profile.d` script will:
-1. Resolve `$DEPS_DIR` at runtime (default: `/home/vcap/deps`)
-2. Point Java to the fonts directory via `-Dsun.java2d.fontpath`
-3. Append to any existing `JAVA_TOOL_OPTIONS` without overwriting
+When supply mode is active, the generated `profile.d` script runs at container startup and:
+1. Resolves `$DEPS_DIR` (default: `/home/vcap/deps`) to find staged fonts
+2. Finds the JRE lib/fonts directory at `$HOME/.java-buildpack/open_jdk_jre/lib/fonts`
+3. Copies all staged fonts into the JRE lib/fonts directory
 
 Example generated script (with DEPS_IDX=0):
 ```bash
 #!/usr/bin/env bash
-FONT_PATH="${DEPS_DIR:-/home/vcap/deps}/0/fonts"
-if [[ -n "${JAVA_TOOL_OPTIONS:-}" ]]; then
-  export JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Dsun.java2d.fontpath=$FONT_PATH"
+STAGED_FONTS="${DEPS_DIR:-/home/vcap/deps}/0/fonts"
+JRE_FONTS_DIR="${HOME}/.java-buildpack/open_jdk_jre/lib/fonts"
+if [[ -d "${JRE_FONTS_DIR}" ]] && [[ -d "${STAGED_FONTS}" ]]; then
+  cp "${STAGED_FONTS}"/* "${JRE_FONTS_DIR}/" 2>/dev/null || true
+  echo "crystal-font-buildpack: Installed fonts into ${JRE_FONTS_DIR}"
 else
-  export JAVA_TOOL_OPTIONS="-Dsun.java2d.fontpath=$FONT_PATH"
+  echo "crystal-font-buildpack: WARNING - JRE fonts dir not found at ${JRE_FONTS_DIR}, skipping"
 fi
 ```
 
