@@ -1,37 +1,35 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 # Define staging paths
-BUILD_DIR=$1
-CACHE_DIR=$2
-DEPS_DIR=$3
+BUILD_DIR="$1"
+CACHE_DIR="$2"
+DEPS_DIR="$3"
+
+# shellcheck source=./lib/font_utils.sh
+source "$(dirname "$0")/lib/font_utils.sh"
+
+# CACHE_DIR is intentionally unused; keep assignment for CF compile script signature.
+: "$CACHE_DIR"
 
 echo "-----> Running Crystal Reports Font Injector <-----"
 
-# 1. Look for the JRE directory installed by the CF Java Buildpack
-# Cloud Foundry stores buildpack dependencies inside the DEPS_DIR
-JRE_DIR=$(find $DEPS_DIR -type d -name "jre" -o -name "jdk" | head -n 1)
+# Look for a Java runtime installed by an earlier buildpack.
+JRE_DIR=$(find "$DEPS_DIR" -type d \( -name "jre" -o -name "jdk" \) | head -n 1 || true)
 
 if [ -z "$JRE_DIR" ]; then
-    echo "WARNING: JRE directory not found yet. Ensuring target directories exist for later stages..."
-    # Fallback: Create standard path relative to app execution environment if JRE loads later
+    echo "WARNING: JRE directory not found yet. Falling back to app-local Java path..."
     JRE_FONTS_DIR="$BUILD_DIR/.java-buildpack/open_jdk_jre/lib/fonts"
+elif [ -d "$JRE_DIR/lib" ]; then
+    JRE_FONTS_DIR="$JRE_DIR/lib/fonts"
 else
-    # Detect if it's Java 8 style (lib/fonts) or Java 9+ (legal/modules style changes)
-    if [ -d "$JRE_DIR/lib" ]; then
-        JRE_FONTS_DIR="$JRE_DIR/lib/fonts"
-    else
-        JRE_FONTS_DIR="$JRE_DIR/fonts"
-    fi
+    JRE_FONTS_DIR="$JRE_DIR/fonts"
 fi
 
 echo "Target JRE fonts directory: $JRE_FONTS_DIR"
 
-# 2. Force create the target directory inside the JRE
-mkdir -p "$JRE_FONTS_DIR"
+FONT_SOURCE_DIR="$(buildpack_dir_from_script "$0")/fonts"
+INSTALLED_COUNT=$(copy_fonts_to_directory "$FONT_SOURCE_DIR" "$JRE_FONTS_DIR")
 
-# 3. Copy the fonts from your buildpack folder directly into the JRE
-BUILDPACK_DIR=$(dirname "$0")/..
-cp $BUILDPACK_DIR/fonts/*.ttf "$JRE_FONTS_DIR/"
-
-echo "Successfully injected $(ls $BUILDPACK_DIR/fonts/ | wc -l) fonts into JRE."
+echo "Successfully injected $INSTALLED_COUNT fonts into JRE."
 exit 0
